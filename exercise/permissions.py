@@ -8,6 +8,8 @@ from authorization.permissions import (
     ObjectVisibleBasePermission,
     FilterBackend,
 )
+from course.permissions import JWTExerciseReadPermission, JWTSubmissionReadPermission
+from userprofile.models import UserProfile
 from .models import (
     LearningObject,
     BaseExercise,
@@ -16,7 +18,7 @@ from .models import (
 )
 
 
-class ExerciseVisiblePermission(ObjectVisibleBasePermission):
+class ExerciseVisiblePermissionBase(ObjectVisibleBasePermission):
     message = _('EXERCISE_VISIBILITY_PERMISSION_DENIED_MSG')
     model = LearningObject
     obj_var = 'exercise'
@@ -27,6 +29,9 @@ class ExerciseVisiblePermission(ObjectVisibleBasePermission):
         """
         if view.is_course_staff:
             return True
+
+        if not isinstance(request.user, UserProfile):
+            return False
 
         if exercise.status == LearningObject.STATUS.HIDDEN:
             self.error_msg(_('EXERCISE_VISIBILITY_ERROR_NOT_VISIBLE'))
@@ -58,6 +63,8 @@ class ExerciseVisiblePermission(ObjectVisibleBasePermission):
                 return False
 
         return True
+
+ExerciseVisiblePermission = ExerciseVisiblePermissionBase | JWTExerciseReadPermission
 
 
 class BaseExerciseAssistantPermission(ObjectVisibleBasePermission):
@@ -91,18 +98,20 @@ class BaseExerciseAssistantPermission(ObjectVisibleBasePermission):
         return True
 
 
-class SubmissionVisiblePermission(ObjectVisibleBasePermission):
+class SubmissionVisiblePermissionBase(ObjectVisibleBasePermission):
     message = _('SUBMISSION_VISIBILITY_PERMISSION_DENIED_MSG')
     model = Submission
     obj_var = 'submission'
 
     def is_object_visible(self, request, view, submission):
-        if not (view.is_teacher or
+        if not isinstance(request.user, UserProfile) or not (view.is_teacher or
                 (view.is_assistant and submission.exercise.allow_assistant_viewing) or
                 submission.is_submitter(request.user)):
             self.error_msg(_('SUBMISSION_VISIBILITY_ERROR_ONLY_SUBMITTER'))
             return False
         return True
+
+SubmissionVisiblePermission = SubmissionVisiblePermissionBase | JWTSubmissionReadPermission
 
 
 class SubmissionVisibleFilter(FilterBackend):
@@ -120,7 +129,7 @@ class SubmissionVisibleFilter(FilterBackend):
         return queryset
 
 
-class SubmittedFileVisiblePermission(SubmissionVisiblePermission):
+class SubmittedFileVisiblePermission(SubmissionVisiblePermissionBase):
     model = SubmittedFile
 
     def is_object_visible(self, request, view, file):

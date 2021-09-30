@@ -2,6 +2,7 @@ import string
 
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
+from rest_framework.permissions import BasePermission as Permission
 
 from lib.helpers import Enum
 
@@ -29,23 +30,6 @@ class FilterBackend(object):
 
     def get_fields(self, view):
         return []
-
-
-class Permission(object):
-    """
-    Permission interface
-    """
-    def has_permission(self, request, view):
-        """
-        Return `True` if permission is granted, `False` otherwise.
-        """
-        return True
-
-    def has_object_permission(self, request, view, obj):
-        """
-        Return `True` if permission is granted, `False` otherwise.
-        """
-        return True
 
 
 class NoPermission(Permission):
