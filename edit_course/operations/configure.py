@@ -662,6 +662,46 @@ def configure_content(instance: CourseInstance, url: str) -> Tuple[bool, List[st
             if category.learning_objects.count() == 0:
                 category.delete()
 
+        if "publish_url" in config:
+            try:
+                response = aplus_auth.get(config["publish_url"])
+            except ConnectionError as e:
+                errors.append(str(e))
+                transaction.set_rollback(True)
+                return False, errors
+            else:
+                if response.status_code != 200:
+                    errors.append(f"publish {config['publish_url']} responded with status {response.status_code}: {response.text}")
+                    transaction.set_rollback(True)
+                    return False, errors
+                else:
+                    if response.text:
+                        try:
+                            publish_errors = json.loads(response.text)
+                        except Exception as e:
+                            errors.append(f"Failed to load publish response JSON: {e}:\n{response.text}")
+                            transaction.set_rollback(True)
+                            return False, errors
+                        else:
+                            if isinstance(publish_errors, dict):
+                                success = publish_errors.get("success", True)
+                                publish_errors = publish_errors.get("errors", [])
+                            else:
+                                success = False
+
+                            if isinstance(publish_errors, list):
+                                publish_errors = (str(e) for e in publish_errors)
+                                success = True
+                            else:
+                                publish_errors = [str(publish_errors)]
+                                success = False
+
+                            errors.extend(f"Publish {config['publish_url']}: {e}" for e in publish_errors)
+
+                            if not success:
+                                transaction.set_rollback(True)
+                                return False, errors
+
     return True, errors
 
 
