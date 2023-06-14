@@ -88,7 +88,7 @@ class CachedPoints(ContentMixin, CachedAbstract):
         # Perform all database queries before generating the cache.
         if user.is_authenticated:
             submissions = list(
-                user.userprofile.submissions.exclude_errors()
+                user.userprofile.submissions
                 .filter(exercise__course_module__course_instance=instance)
                 .select_related()
                 .prefetch_related('exercise__parent', 'exercise__submission_feedback_reveal_rule', 'notifications')
