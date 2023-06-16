@@ -204,11 +204,10 @@ class CachedPoints(ContentMixin, CachedAbstract):
             # Augment deviation data.
             for deviation in deadline_deviations:
                 try:
-                    tree = self._by_idx(modules, exercise_index[deviation.exercise.id])
+                    entry = exercise_index[deviation.exercise.id]
                 except KeyError:
                     self.dirty = True
                     continue
-                entry = tree[-1]
                 entry['personal_deadline'] = (
                     entry['closing_time'] + datetime.timedelta(minutes=deviation.extra_minutes)
                 )
@@ -216,11 +215,10 @@ class CachedPoints(ContentMixin, CachedAbstract):
 
             for deviation in submission_deviations:
                 try:
-                    tree = self._by_idx(modules, exercise_index[deviation.exercise.id])
+                    entry = exercise_index[deviation.exercise.id]
                 except KeyError:
                     self.dirty = True
                     continue
-                entry = tree[-1]
                 entry['personal_max_submissions'] = (
                     entry['max_submissions'] + deviation.extra_submissions
                 )
@@ -286,11 +284,10 @@ class CachedPoints(ContentMixin, CachedAbstract):
                     # These variables stay constant throughout the exercise.
                     exercise = submission.exercise
                     try:
-                        tree = self._by_idx(modules, exercise_index[exercise.id])
+                        entry = exercise_index[exercise.id]
                     except KeyError:
                         self.dirty = True
                         continue
-                    entry = tree[-1]
                     if exercise.grading_mode == BaseExercise.GRADING_MODE.BEST:
                         is_better_than = has_more_points
                     elif exercise.grading_mode == BaseExercise.GRADING_MODE.LAST:
@@ -380,20 +377,19 @@ class CachedPoints(ContentMixin, CachedAbstract):
                 apply_reveal_rule()
 
         # Confirm points.
-        def r_check(parent: Dict[str, Any], children: List[Dict[str, Any]]) -> None:
-            for entry in children:
-                if (
-                    entry['submittable']
-                    and entry['confirm_the_level']
-                    and entry['passed']
-                ):
-                    parent.pop('unconfirmed', None)
-                    for child in parent.get('children', []):
-                        child.pop('unconfirmed', None)
-                        # TODO: should recurse to all descendants
-                r_check(entry, entry.get('children', []))
-        for module in modules:
-            r_check(module, module['children'])
+        for entry in exercise_index.values():
+            if (
+                entry['submittable']
+                and entry['confirm_the_level']
+                and entry['passed']
+            ):
+                parent = entry["parent"]
+                if parent is None:
+                    parent = entry["module"]
+                parent.pop('unconfirmed', None)
+                for child in parent.get('children', []):
+                    child.pop('unconfirmed', None)
+                    # TODO: should recurse to all descendants
 
         # Collect points and check limits.
         def add_to(target: Dict[str, Any], entry: Dict[str, Any]) -> None:
@@ -438,6 +434,8 @@ class CachedPoints(ContentMixin, CachedAbstract):
             confirm_entry = None
             for entry in children:
                 if entry['submittable']:
+                    # TODO: this seems to skip counting points and submission for
+                    # exercises with confirm_the_level = True
                     if entry['confirm_the_level']:
                         confirm_entry = entry
                     else:
@@ -511,7 +509,7 @@ class CachedPoints(ContentMixin, CachedAbstract):
                 submissions.extend(s['id'] for s in entry.get('submissions', []))
         return submissions
 
-    def _pack_tuples(self, value1, value2, parent_container=None, parent_key=None):
+    def _pack_tuples(self, value1, value2):
         """
         Compare two data structures, and when conflicting values are found,
         pack them into a tuple. `value1` is modified in this operation.
@@ -520,19 +518,28 @@ class CachedPoints(ContentMixin, CachedAbstract):
         `value2={"key1": "a", "key2": "c"}`, `value1` will become
         `{"key1": "a", "key2": ("b", "c")}`.
         """
-        if isinstance(value1, dict):
-            for key, inner_value1 in value1.items():
-                inner_value2 = value2[key]
-                self._pack_tuples(inner_value1, inner_value2, value1, key)
-        elif isinstance(value1, list):
-            for index, inner_value1 in enumerate(value1):
-                inner_value2 = value2[index]
-                self._pack_tuples(inner_value1, inner_value2, value1, index)
-        else:
-            if value1 != value2:
-                parent_container[parent_key] = (value1, value2)
+        packing = set()
+        def pack_tuples(value1, value2, parent_container, parent_key):
+            if isinstance(value1, dict):
+                if id(value1) in packing:
+                    return
 
-    def _extract_tuples(self, value, tuple_index, parent_container=None, parent_key=None):
+                packing.add(id(value1))
+
+                for key, inner_value1 in value1.items():
+                    inner_value2 = value2[key]
+                    pack_tuples(inner_value1, inner_value2, value1, key)
+            elif isinstance(value1, list):
+                for index, inner_value1 in enumerate(value1):
+                    inner_value2 = value2[index]
+                    pack_tuples(inner_value1, inner_value2, value1, index)
+            else:
+                if value1 != value2:
+                    parent_container[parent_key] = (value1, value2)
+
+        pack_tuples(value1, value2, None, None)
+
+    def _extract_tuples(self, value, tuple_index):
         """
         Find tuples within a data structure, and replace them with the value
         at `tuple_index` in the tuple. `value` is modified in this operation.
@@ -540,14 +547,24 @@ class CachedPoints(ContentMixin, CachedAbstract):
         Example: when called with `value={"key1": "a", "key2": ("b", "c")}` and
         `tuple_index=0`, `value` will become `{"key1": "a", "key2": "b"}`.
         """
-        if isinstance(value, dict):
-            for key, inner_value in value.items():
-                self._extract_tuples(inner_value, tuple_index, value, key)
-        elif isinstance(value, list):
-            for index, inner_value in enumerate(value):
-                self._extract_tuples(inner_value, tuple_index, value, index)
-        elif isinstance(value, tuple):
-            parent_container[parent_key] = value[tuple_index]
+        extracting = set()
+        def extract_tuples(value, tuple_index, parent_container, parent_key):
+            if isinstance(value, dict):
+                if id(value) in extracting:
+                    return
+
+                extracting.add(id(value))
+
+                for key, inner_value in value.items():
+                    extract_tuples(inner_value, tuple_index, value, key)
+            elif isinstance(value, list):
+                for index, inner_value in enumerate(value):
+                    extract_tuples(inner_value, tuple_index, value, index)
+            elif isinstance(value, tuple):
+                parent_container[parent_key] = value[tuple_index]
+
+        extract_tuples(value, tuple_index, None, None)
+
 
 # pylint: disable-next=unused-argument
 def invalidate_content(sender: Type[Model], instance: Submission, **kwargs: Any) -> None:
