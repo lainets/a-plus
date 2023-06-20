@@ -305,6 +305,7 @@ MIDDLEWARE = [
     'social_django.middleware.SocialAuthExceptionMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'lib.profiler.ProfilerMiddleware',
 ]
 
 ROOT_URLCONF = 'aplus.urls'
