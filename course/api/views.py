@@ -1,4 +1,5 @@
 import re
+from typing import Any, Dict, List, Union
 
 from rest_framework import filters, viewsets, status, mixins
 from rest_framework.decorators import action
@@ -14,6 +15,7 @@ from django.utils.translation import gettext_lazy as _
 
 from aplus.api import api_reverse
 from edit_course.operations.configure import configure_from_url
+from exercise.cache.content import ModuleEntry, ExerciseEntry
 from lib.api.constants import REGEX_INT, REGEX_INT_ME
 from lib.api.filters import FieldValuesFilter
 from lib.api.mixins import ListSerializerMixin, MeUserMixin
@@ -203,32 +205,36 @@ class CourseExercisesViewSet(NestedViewSetMixin,
     lookup_value_regex = REGEX_INT
     parent_lookup_map = {'course_id': 'course_instance.id'}
 
-    def __recurse_exercises(self, module, exercises):
-        for child in filter(lambda ex: ex['type'] == 'exercise', module['children']):
-            if child['submittable']:
+    def __recurse_exercises(
+            self,
+            module: Union[ModuleEntry, ExerciseEntry],
+            exercises: List[Dict[str, Any]],
+            ) -> List[Dict[str, Any]]:
+        for child in module.children:
+            if child.submittable:
                 # check if there is a xx.yy pattern at the start of the name (e.g. 6.2 Hello Python). Also matches 1.
                 # Also matches roman numerals
                 # https://stackoverflow.com/questions/267399/how-do-you-match-only-valid-roman-numerals-with-a-regular-expression
                 hierarchical_name = (
-                    child['name']
+                    child.name
                     if re.match(
                         r"^([0-9]+\.[0-9.]* )|(M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})) ",
-                        child['name'],
+                        child.name,
                     )
-                    else f"{child['number']} {child['name']}"
+                    else f"{child.number} {child.name}"
                 )
                 exercise_dictionary = {
-                    'id': child['id'],
+                    'id': child.id,
                     'url': build_aplus_url(
-                        api_reverse('exercise-detail', kwargs={'exercise_id': child['id']}),
+                        api_reverse('exercise-detail', kwargs={'exercise_id': child.id}),
                         True,
                     ),
-                    'html_url': build_aplus_url(child['link'], True),
-                    'display_name': child['name'],
-                    'max_points': child['max_points'],
-                    'max_submissions': child['max_submissions'],
+                    'html_url': build_aplus_url(child.link, True),
+                    'display_name': child.name,
+                    'max_points': child.max_points,
+                    'max_submissions': child.max_submissions,
                     'hierarchical_name': hierarchical_name,
-                    'difficulty': child['difficulty'],
+                    'difficulty': child.difficulty,
                 }
                 exercises.append(exercise_dictionary)
 
@@ -238,35 +244,35 @@ class CourseExercisesViewSet(NestedViewSetMixin,
 
         return exercises
 
-    def __module_to_dict(self, module, **kwargs):
-        kwargs['exercisemodule_id'] = module['id']
+    def __module_to_dict(self, module: ModuleEntry, **kwargs) -> Dict[str, Any]:
+        kwargs['exercisemodule_id'] = module.id
         module_dictionary = {
-            'id': module['id'],
+            'id': module.id,
             'url': build_aplus_url(api_reverse("course-exercises-detail", kwargs=kwargs), True),
-            'html_url': build_aplus_url(module['link'], True),
-            'display_name': module['name'],
+            'html_url': build_aplus_url(module.link, True),
+            'display_name': module.name,
             'is_open': CourseModule.check_is_open(
-                module['reading_opening_time'],
-                module['opening_time'],
-                module['closing_time'],
+                module.reading_opening_time,
+                module.opening_time,
+                module.closing_time,
             ),
         }
         module_dictionary['exercises'] = self.__recurse_exercises(module, [])
         return module_dictionary
 
-    def list(self, request, *args, **kwargs):
+    def list(self, request, *args, **kwargs) -> Response:
         modules = []
-        for module in self.content.data['modules']:
+        for module in self.content.data.modules:
             modules.append(self.__module_to_dict(module, **kwargs))
         return Response({"count": len(modules), "next": None, "previous": None, 'results': modules})
 
-    def retrieve(self, request, *args, **kwargs):
+    def retrieve(self, request, *args, **kwargs) -> Response:
         # try to get the module list index
-        idx = self.content.data['module_index'].get(int(kwargs['exercisemodule_id']))
-        if idx is None:
+        entry = self.content.data.module_index.get(int(kwargs['exercisemodule_id']))
+        if entry is None:
             raise Http404()
 
-        return Response(self.__module_to_dict(self.content.data['modules'][idx[0]], **kwargs))
+        return Response(self.__module_to_dict(entry, **kwargs))
 
 
 class CourseExerciseTreeViewSet(CourseResourceMixin,
@@ -291,7 +297,7 @@ class CourseExerciseTreeViewSet(CourseResourceMixin,
 
     def list(self, request, *args, **kwargs):
         serializer = self.serializer_class(
-            self.content.data['modules'],
+            self.content.data.modules,
             many=True,
             context={ 'request': request }
         )

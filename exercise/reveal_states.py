@@ -1,11 +1,15 @@
+from __future__ import annotations
 import datetime
-from typing import Any, Dict, List, Optional, overload, Union
+from typing import List, Optional, overload, TYPE_CHECKING, Union
 
 from django.contrib.auth.models import User
 
 from deviations.models import DeadlineRuleDeviation
 from .cache.content import CachedContent
 from .exercise_models import BaseExercise
+
+if TYPE_CHECKING:
+    from .cache.points import ExerciseEntry
 
 
 class BaseRevealState:
@@ -42,11 +46,11 @@ class ExerciseRevealState(BaseRevealState):
     def __init__(self, exercise: BaseExercise, student: User):
         ...
     @overload
-    def __init__(self, exercise: Dict[str, Any]):
+    def __init__(self, exercise: ExerciseEntry):
         ...
     def __init__(
             self,
-            exercise: Union[BaseExercise, Dict[str, Any]],
+            exercise: Union[BaseExercise, ExerciseEntry],
             student: Optional[User] = None
             ):
         # Can be constructed either with a BaseExercise instance or a
@@ -67,23 +71,23 @@ class ExerciseRevealState(BaseRevealState):
         self.max_deviation: Optional[DeadlineRuleDeviation] = None
 
     def get_points(self) -> Optional[int]:
-        return self.cache['points']
+        return self.cache.points
 
     def get_max_points(self) -> Optional[int]:
-        return self.cache['max_points']
+        return self.cache.max_points
 
     def get_submissions(self) -> Optional[int]:
-        return self.cache['submission_count']
+        return self.cache.submission_count
 
     def get_max_submissions(self) -> Optional[int]:
-        personal_max_submissions = self.cache['personal_max_submissions']
+        personal_max_submissions = self.cache.personal_max_submissions
         if personal_max_submissions is not None:
             return personal_max_submissions
-        return self.cache['max_submissions']
+        return self.cache.max_submissions
 
     def get_deadline(self) -> Optional[datetime.datetime]:
         deadlines = self._get_common_deadlines()
-        personal_deadline = self.cache['personal_deadline']
+        personal_deadline = self.cache.personal_deadline
         if personal_deadline is not None:
             deadlines.append(personal_deadline)
         return max(deadlines)
@@ -97,16 +101,16 @@ class ExerciseRevealState(BaseRevealState):
         if not self.max_deviation_fetched:
             self.max_deviation = (
                 DeadlineRuleDeviation.objects
-                .filter(exercise_id=self.cache['id'])
+                .filter(exercise_id=self.cache.id)
                 .order_by('-extra_minutes').first()
             )
             self.max_deviation_fetched = True
         if self.max_deviation is not None:
-            deadlines.append(self.max_deviation.get_new_deadline(self.cache['closing_time']))
+            deadlines.append(self.max_deviation.get_new_deadline(self.cache.closing_time))
         return max(deadlines)
 
     def _get_common_deadlines(self) -> List[datetime.datetime]:
-        deadlines = [self.cache['closing_time']]
-        if self.cache['late_allowed'] and self.cache['late_percent'] > 0:
-            deadlines.append(self.cache['late_time'])
+        deadlines = [self.cache.closing_time]
+        if self.cache.late_allowed and self.cache.late_percent > 0:
+            deadlines.append(self.cache.late_time)
         return deadlines
