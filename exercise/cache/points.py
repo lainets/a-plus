@@ -12,6 +12,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    overload,
     Type,
     TypeVar,
     Tuple,
@@ -32,6 +33,7 @@ from userprofile.models import UserProfile
 from .basetypes import CachedDataBase, CategoryEntryBase, EqById, ExerciseEntryBase, ModuleEntryBase, TotalsBase
 from .content import CachedContent
 from .hierarchy import ContentMixin
+from ..exercise_models import LearningObject
 from ..models import BaseExercise, Submission, RevealRule
 from ..reveal_states import ExerciseRevealState
 
@@ -128,7 +130,7 @@ class CategoryEntry(CommonPointData, CommonStats, CategoryEntryBase):
 ModuleEntryType = TypeVar("ModuleEntryType", bound=ModuleEntryBase)
 @cache_fields
 @dataclass(eq=False)
-class ModuleEntry(CommonPointData, CommonStats, ModuleEntryBase):
+class ModuleEntry(CommonPointData, CommonStats, ModuleEntryBase["ExerciseEntry"]):
     passed: bool = False # TODO: no default
     unconfirmed: bool = False
 
@@ -172,7 +174,7 @@ class SubmissionEntry(CommonPointData, SubmissionEntryBase): ...
 ExerciseEntryType = TypeVar("ExerciseEntryType", bound=ExerciseEntryBase)
 @cache_fields
 @dataclass(eq=False)
-class ExerciseEntry(CommonPointData, ExerciseEntryBase):
+class ExerciseEntry(CommonPointData, ExerciseEntryBase[ModuleEntry, "ExerciseEntry"]):
     unconfirmed: bool = False
 
     @classmethod
@@ -226,7 +228,7 @@ EitherExerciseEntry = Union[ExerciseEntry, SubmittableExerciseEntry]
 CachedPointsDataType = TypeVar("CachedPointsDataType", bound="CachedPointsData")
 @cache_fields
 @dataclass(eq=False)
-class CachedPointsData(CachedDataBase):
+class CachedPointsData(CachedDataBase[ModuleEntry, EitherExerciseEntry, CategoryEntry, Totals]):
     invalidate_time: Optional[datetime.datetime] = None
     points_created: datetime.datetime = field(default_factory=timezone.now)
 
@@ -254,7 +256,7 @@ class CachedPointsData(CachedDataBase):
         return cast(CachedPointsDataType, data)
 
 
-class CachedPoints(CachedAbstract, ContentMixin):
+class CachedPoints(CachedAbstract[CachedPointsData], ContentMixin[ModuleEntry, EitherExerciseEntry, CategoryEntry, Totals]):
     """
     Extends `CachedContent` to include data about a user's submissions and
     points in the course's exercises.
@@ -266,7 +268,6 @@ class CachedPoints(CachedAbstract, ContentMixin):
     always revealed.
     """
     KEY_PREFIX = 'points'
-    data: CachedPointsData
 
     def __init__(
             self,
@@ -591,8 +592,7 @@ class CachedPoints(CachedAbstract, ContentMixin):
             points = 0
             confirm_entry: Optional[SubmittableExerciseEntry] = None
             for entry in children:
-                if entry.submittable:
-                    entry = cast(SubmittableExerciseEntry, entry)
+                if isinstance(entry, SubmittableExerciseEntry):
                     # TODO: this seems to skip counting points and submission for
                     # exercises with confirm_the_level = True
                     if entry.confirm_the_level:
@@ -659,9 +659,8 @@ class CachedPoints(CachedAbstract, ContentMixin):
                 if not isinstance(entry, SubmittableExerciseEntry):
                     continue
 
-                sid = entry.best_submission
-                if sid is not None:
-                    submissions.append(sid)
+                if entry.best_submission is not None:
+                    submissions.append(entry.best_submission)
                 elif fallback_to_last:
                     entry_submissions = entry.submissions
                     if entry_submissions:
@@ -673,6 +672,13 @@ class CachedPoints(CachedAbstract, ContentMixin):
 
                 submissions.extend(s.id for s in entry.submissions)
         return submissions
+
+    @overload
+    def entry_for_exercise(self, model: BaseExercise) -> SubmittableExerciseEntry: ...
+    @overload
+    def entry_for_exercise(self, model: LearningObject) -> EitherExerciseEntry: ...
+    def entry_for_exercise(self, model: LearningObject) -> EitherExerciseEntry:
+        return super().entry_for_exercise(model)
 
     def _pack_tuples(self, value1, value2):
         """
@@ -696,7 +702,7 @@ class CachedPoints(CachedAbstract, ContentMixin):
                     inner_value2 = value2[key]
                     pack_tuples(inner_value1, inner_value2, value1, key)
             elif isinstance(value1, (CachedPointsData, ExerciseEntry, CategoryEntry, ModuleEntry)):
-                for f in value1._dc_fields:
+                for f in value1._dc_fields: # type: ignore
                     pack_tuples(getattr(value1, f.name), getattr(value2, f.name), value1, f.name)
             elif isinstance(value1, list):
                 for index, inner_value1 in enumerate(value1):
@@ -731,7 +737,7 @@ class CachedPoints(CachedAbstract, ContentMixin):
                 for key, inner_value in value.items():
                     extract_tuples(inner_value, tuple_index, value, key)
             elif isinstance(value, (CachedPointsData, ExerciseEntry, CategoryEntry, ModuleEntry)):
-                for f in value._dc_fields:
+                for f in value._dc_fields: # type: ignore
                     extract_tuples(getattr(value, f.name), tuple_index, value, f.name)
             elif isinstance(value, list):
                 for index, inner_value in enumerate(value):

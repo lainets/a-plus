@@ -16,7 +16,7 @@ from course.api.mixins import CourseResourceMixin
 from course.permissions import IsCourseAdminOrUserObjIsSelf
 from userprofile.models import UserProfile
 
-from ...cache.points import CachedPoints
+from ...cache.points import CachedPoints, SubmittableExerciseEntry
 from ...models import Submission
 from .submission_sheet import filter_best_submissions, submissions_sheet
 from .aggregate_sheet import aggregate_sheet
@@ -331,8 +331,8 @@ class CourseResultsDataViewSet(NestedViewSetMixin,
 
     def serialize_profiles(self, request: Request, profiles: QuerySet[UserProfile]) -> Response:
         search_args = self.get_search_args(request)
-        _, exercises = self.content.search_entries(**search_args)
-        ids = [e.id for e in exercises if e.type == 'exercise']
+        exercises = self.content.search_exercises(**search_args)
+        ids = [e.id for e in exercises]
         points = CachedPoints(self.instance, request.user, self.content, self.is_course_staff)
         revealed_ids = get_revealed_exercise_ids(search_args, points)
         exclude_list = [Submission.STATUS.ERROR, Submission.STATUS.REJECTED]
@@ -398,8 +398,7 @@ def get_revealed_exercise_ids(search_args: Dict[str, Any], points: CachedPoints)
     """
     _, exercises = points.search_entries(**search_args)
     return {
-        e.id for e in exercises
-        if e.type == 'exercise'
-        and e.submittable
-        and e.feedback_revealed
+        e.id
+        for e in exercises
+        if isinstance(e, SubmittableExerciseEntry) and e.feedback_revealed
     }
