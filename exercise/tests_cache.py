@@ -7,7 +7,6 @@ from .models import BaseExercise, StaticExercise, Submission
 
 
 class CachedContentTest(CourseTestCase):
-
     def test_invalidation(self):
         c = CachedContent(self.instance)
         created = c.created()
@@ -21,7 +20,6 @@ class CachedContentTest(CourseTestCase):
         self.module0.status = CourseModule.STATUS.UNLISTED
         self.module0.save()
         c = CachedContent(self.instance)
-        self.assertFalse(c.dirty)
         total = c.total()
         self.assertEqual(total.min_group_size, 1)
         self.assertEqual(total.max_group_size, 2)
@@ -127,31 +125,25 @@ class CachedContentTest(CourseTestCase):
 
 
 class CachedPointsTest(CourseTestCase):
-
     def test_invalidation(self):
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
-        self.assertFalse(p.dirty)
+        p = CachedPoints(self.instance, self.student)
         created = p.created()
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         self.assertEqual(p.created(), created)
         self.exercise0.save()
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         self.assertNotEqual(p.created(), created)
         created = p.created()
         self.submission2.save()
         c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         self.assertEqual(c.created(), created[1])
         self.assertNotEqual(p.created(), created)
 
     def test_accumulation(self):
         self.submission2.set_points(2,2)
         self.submission2.save()
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         entry, _tree, _, _ = p.find(self.exercise)
         self.assertTrue(entry.graded)
         self.assertTrue(entry.passed)
@@ -170,7 +162,7 @@ class CachedPointsTest(CourseTestCase):
 
         self.submission2.set_ready()
         self.submission2.save()
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         total = p.total()
         self.assertEqual(total.submission_count, 2)
         self.assertEqual(total.points, 100)
@@ -179,7 +171,7 @@ class CachedPointsTest(CourseTestCase):
         self.submission3.set_points(10,100)
         self.submission3.set_ready()
         self.submission3.save()
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         total = p.total()
         self.assertEqual(total.submission_count, 3)
         self.assertEqual(total.points, 110)
@@ -196,8 +188,7 @@ class CachedPointsTest(CourseTestCase):
         )
         self.exercise2.category = self.category2
         self.exercise2.save()
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         total = p.total()
         self.assertEqual(total.points, 0)
         self.assertEqual(total.points_by_difficulty.get('',0), 0)
@@ -210,7 +201,7 @@ class CachedPointsTest(CourseTestCase):
         self.submission3.set_points(1,2)
         self.submission3.set_ready()
         self.submission3.save()
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         total = p.total()
         self.assertEqual(total.points, 50)
         self.assertEqual(total.points_by_difficulty.get('',0), 50)
@@ -238,8 +229,7 @@ class CachedPointsTest(CourseTestCase):
         self.submission2.set_ready()
         self.submission2.save()
 
-        c = CachedContent(self.instance)
-        p = CachedPoints(self.instance, self.student, c)
+        p = CachedPoints(self.instance, self.student)
         entry,_,_,_ = p.find(self.exercise3)
         self.assertFalse(entry.graded)
         self.assertTrue(entry.unofficial)
