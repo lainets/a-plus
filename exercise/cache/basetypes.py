@@ -45,7 +45,7 @@ CategoryEntry = TypeVar("CategoryEntry", bound="CategoryEntryBase")
 Totals = TypeVar("Totals", bound="TotalsBase")
 
 
-@dataclass(eq=False, repr=False)
+
 class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
     KEY_PREFIX: ClassVar[str] = 'exercise'
     NUM_PARAMS: ClassVar[int] = 1
@@ -94,10 +94,6 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
 
         for i, params in enumerate(self.children):
             self.children[i] = precreated.get_or_create_proxy(ExerciseEntryBase, *params[0])
-
-    def __post_init__(self):
-        self._resolved = True
-        self._params = (self.id,)
 
     def get_proxy_keys(self) -> Iterable[str]:
         return ["module", "parent", "children"]
@@ -166,8 +162,6 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
             self.allow_assistant_viewing = False
 
 
-
-@dataclass(eq=False, repr=False)
 class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
     KEY_PREFIX: ClassVar[str] = 'module'
     NUM_PARAMS: ClassVar[int] = 1
@@ -188,10 +182,10 @@ class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
     late_time: datetime
     late_percent: int
     points_to_pass: int
-    exercise_count: int = 0
-    max_points: int = 0
-    max_points_by_difficulty: Dict[str, int] = field(default_factory=dict)
-    children: List[ExerciseEntry] = field(default_factory=list)
+    exercise_count: int
+    max_points: int
+    max_points_by_difficulty: Dict[str, int]
+    children: List[ExerciseEntry]
 
     def post_build(self, precreated: ProxyManager):
         if self.children and not isinstance(self.children[0], tuple):
@@ -199,10 +193,6 @@ class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
 
         for i, params in enumerate(self.children):
             self.children[i] = precreated.get_or_create_proxy(ExerciseEntryBase, *params[0])
-
-    def __post_init__(self):
-        self._resolved = True
-        self._params = (self.id,)
 
     def get_proxy_keys(self) -> Iterable[str]:
         return ["children"]
@@ -273,7 +263,6 @@ class TotalsBase:
 
 
 T = TypeVar("T", bound="CachedDataBase")
-@dataclass
 class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntry, Totals]):
     KEY_PREFIX: ClassVar[str] = 'instance'
     NUM_PARAMS: ClassVar[int] = 1
@@ -285,10 +274,6 @@ class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntr
     modules: List[ModuleEntry]
     categories: Dict[int, CategoryEntry]
     total: Totals
-
-    def __post_init__(self, instance_id: int):
-        self._resolved = True
-        self._params = (instance_id,)
 
     def post_build(self, precreated: ProxyManager):
         if self.modules and not isinstance(self.modules[0], tuple):
