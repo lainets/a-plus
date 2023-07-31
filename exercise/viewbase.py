@@ -14,8 +14,7 @@ from lib.viewbase import BaseTemplateView, BaseView
 from userprofile.models import UserProfile
 
 from .cache.hierarchy import NoSuchContent
-from .cache.points import CachedPoints
-from .exercise_summary import UserExerciseSummary
+from .cache.points import SubmittableExerciseEntry
 from .permissions import (
     ExerciseVisiblePermission,
     BaseExerciseAssistantPermission,
@@ -124,10 +123,10 @@ class ExerciseMixin(ExerciseRevealRuleMixin, ExerciseBaseMixin, CourseModuleMixi
         self.note("now", "previous", "current", "next", "breadcrumb", "submission_url_name", "exercise_url_name")
 
     def get_summary_submissions(self, user: Optional[User] = None) -> None:
-        self.summary = UserExerciseSummary(
-            self.exercise, user or self.request.user
+        self.summary = SubmittableExerciseEntry.get(
+            self.exercise, user or self.request.user, self.feedback_revealed
         )
-        self.submissions = self.summary.get_submissions()
+        self.submissions = self.summary.submissions
         self.note("summary", "submissions")
 
     def get_cached_points(self, user: Optional[User] = None) -> None:
@@ -201,13 +200,13 @@ class SubmissionMixin(SubmissionBaseMixin, ExerciseMixin):
     def get_summary_submissions(self, user: Optional[User] = None) -> None:
         if not (user or self.submitter):
             # The submission has no submitters.
-            # Use AnonymousUser in the UserExerciseSummary
+            # Use AnonymousUser in the SubmittableExerciseEntry
             # so that it does not pick submissions from request.user (the teacher).
             user = AnonymousUser()
             self.index = 0
         super().get_summary_submissions(user or self.submitter.user)
         if self.submissions:
-            self.index = len(self.submissions) - list(self.submissions).index(self.submission)
+            self.index = len(self.submissions) - list(s.id for s in self.submissions).index(self.submission.id)
         self.note("index")
 
     def get_cached_points(self, user: Optional[User] = None) -> None:
