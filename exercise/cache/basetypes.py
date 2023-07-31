@@ -7,11 +7,11 @@ from django.db.models import Prefetch
 from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
 
-from course.models import CourseInstance, CourseModule
+from course.models import CourseInstance, CourseInstanceProto, CourseModule, CourseModuleProto
 from lib.cache.cached import CacheBase, DBData, ProxyManager
 from threshold.models import CourseModuleRequirement
 from .invalidate_util import category_learning_objects, learning_object_ancestors, module_learning_objects
-from ..models import BaseExercise, LearningObject, LearningObjectCategory
+from ..models import BaseExercise, LearningObject, LearningObjectCategory, LearningObjectProto
 
 
 def add_by_difficulty(to: Dict[str, int], difficulty: str, points: int):
@@ -47,7 +47,8 @@ CategoryEntry = TypeVar("CategoryEntry", bound="CategoryEntryBase")
 Totals = TypeVar("Totals", bound="TotalsBase")
 
 
-class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
+class ExerciseEntryBase(LearningObjectProto, CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
+    PROTO_BASES = (LearningObjectProto,)
     KEY_PREFIX: ClassVar[str] = 'exercise'
     NUM_PARAMS: ClassVar[int] = 1
     INVALIDATORS = [
@@ -80,7 +81,7 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
     late_time: datetime
     late_percent: int
     is_empty: bool
-    get_path: str
+    path: str
     points_to_pass: int
     difficulty: str
     max_submissions: int
@@ -88,6 +89,16 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
     allow_assistant_viewing: bool
     children: List[ExerciseEntry]
     submittable: bool
+
+    def get_path(self):
+        return self.path
+
+    @property
+    def course_module(self):
+        return self.module
+
+    def __str__(self) -> str:
+        return self.name
 
     def get_child_proxies(self) -> List[CacheBase]:
         children = [self.module, *self.children]
@@ -134,7 +145,7 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
         self.late_time = module.late_submission_deadline
         self.late_percent = module.get_late_submission_point_worth()
         self.is_empty = lobj.is_empty()
-        self.get_path = lobj.get_path()
+        self.path = lobj.get_path() # TODO: invalidate if parent url changes
         self.children = [precreated.get_or_create_proxy(ExerciseEntryBase, o.id) for o in children]
 
         if isinstance(lobj, BaseExercise):
@@ -153,7 +164,8 @@ class ExerciseEntryBase(CacheBase, EqById, Generic[ModuleEntry, ExerciseEntry]):
             self.allow_assistant_viewing = False
 
 
-class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
+class ModuleEntryBase(CourseModuleProto, CacheBase, EqById, Generic[ExerciseEntry]):
+    PROTO_BASES = (CourseModuleProto,)
     KEY_PREFIX: ClassVar[str] = 'module'
     NUM_PARAMS: ClassVar[int] = 1
     INVALIDATORS = [
@@ -181,7 +193,12 @@ class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
     exercise_count: int
     max_points: int
     max_points_by_difficulty: Dict[str, int]
+    instance: "CachedDataBase"
     children: List[ExerciseEntry]
+
+    @property
+    def course_instance(self) -> "CachedDataBase":
+        return self.instance
 
     def get_child_proxies(self) -> Iterable[CacheBase]:
         return self.children
@@ -216,6 +233,7 @@ class ModuleEntryBase(CacheBase, EqById, Generic[ExerciseEntry]):
         self.late_time = module.late_submission_deadline
         self.late_percent = module.get_late_submission_point_worth()
         self.points_to_pass = module.points_to_pass
+        self.instance = precreated.get_or_create_proxy(CachedDataBase, module.course_instance_id)
         self.children = [precreated.get_or_create_proxy(ExerciseEntryBase, child.id) for child in children]
         self.exercise_count = 0
         self.max_points = 0
@@ -249,7 +267,8 @@ class TotalsBase:
 
 
 CachedDataBaseType = TypeVar("CachedDataBaseType", bound="CachedDataBase")
-class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntry, Totals]):
+class CachedDataBase(CourseInstanceProto, CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntry, Totals]):
+    PROTO_BASES = (CourseInstanceProto,)
     KEY_PREFIX: ClassVar[str] = 'instance'
     NUM_PARAMS: ClassVar[int] = 1
     INVALIDATORS = [
@@ -261,6 +280,8 @@ class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntr
         (LearningObjectCategory, [post_delete, post_save], category_learning_objects(lambda lobj: [lobj.course_module.course_instance_id])),
     ]
     instance_id: InitVar[int]
+    url: str
+    course_url_kwargs: Dict[str, str]
     created: datetime
     module_index: Dict[int, ModuleEntry]
     exercise_index: Dict[int, ExerciseEntry]
@@ -268,6 +289,9 @@ class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntr
     modules: List[ModuleEntry]
     categories: Dict[int, CategoryEntry]
     total: Totals
+
+    def get_course_url_kwargs(self):
+        return self.course_url_kwargs
 
     @classmethod
     def get(
@@ -324,8 +348,12 @@ class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntr
             prefetched_data.extend(CourseModule, module_objs)
             prefetched_data.extend(LearningObject, lobjs)
         else:
+            instance = prefetched_data.get_db_object(CourseInstance, instance_id)
             module_objs = prefetched_data.filter_db_objects(CourseModule, course_instance_id=instance_id)
             lobjs = [lobj for module in module_objs for lobj in module.learning_objects.all()]
+
+        self.url = instance.url
+        self.course_url_kwargs = instance.course.get_url_kwargs()
 
         self.exercise_index = exercise_index = {}
         self.module_index = module_index = {}
@@ -355,7 +383,7 @@ class CachedDataBase(CacheBase, Generic[ModuleEntry, ExerciseEntry, CategoryEntr
         precreated.resolve(self.get_child_proxies(), prefetched_data=prefetched_data)
 
         for entry in exercise_index.values():
-            paths[entry.module.id][entry.get_path] = entry.id
+            paths[entry.module.id][entry.path] = entry.id
 
         # Augment submittable exercise parameters.
         for exercise in lobjs:
