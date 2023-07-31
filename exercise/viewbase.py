@@ -14,7 +14,7 @@ from lib.viewbase import BaseTemplateView, BaseView
 from userprofile.models import UserProfile
 
 from .cache.hierarchy import NoSuchContent
-from .cache.points import SubmittableExerciseEntry
+from .cache.points import ExerciseEntry, SubmittableExerciseEntry
 from .permissions import (
     ExerciseVisiblePermission,
     BaseExerciseAssistantPermission,
@@ -130,8 +130,7 @@ class ExerciseMixin(ExerciseRevealRuleMixin, ExerciseBaseMixin, CourseModuleMixi
         self.note("summary", "submissions")
 
     def get_cached_points(self, user: Optional[User] = None) -> None:
-        cache = CachedPoints(self.instance, user or self.request.user, self.is_course_staff)
-        self.cached_points = cache.get_exercise(self.exercise.id)
+        self.cached_points = ExerciseEntry.get(self.exercise, user or self.request.user, self.is_course_staff)
         self.note("cached_points")
 
 
