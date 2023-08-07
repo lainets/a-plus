@@ -306,6 +306,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'lib.profiler.ProfilerMiddleware',
+    'lib.request_globals.ClearRequestGlobals'
 ]
 
 ROOT_URLCONF = 'aplus.urls'
