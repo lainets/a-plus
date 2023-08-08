@@ -5,7 +5,6 @@ from django.db import models
 from django.utils.safestring import mark_safe
 from django.utils.translation import get_language
 
-from exercise.cache.content import CachedContent
 from course.models import CourseInstance, UserTagging
 from lib.localization_syntax import pick_localized
 from userprofile.models import UserProfile
