@@ -344,6 +344,7 @@ class DeviationsTest(TestCase):
 
         extra_exercise = BaseExercise.objects.create(
             name="extra exercise",
+            url="module1_extra",
             course_module=self.course_module,
             category=self.learning_object_category,
             max_points=50,

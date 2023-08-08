@@ -85,6 +85,17 @@ class RequestGlobal(ThreadGlobal):
         return obj
 
 
+class OptInGlobal(ThreadGlobal):
+    """Thread global that is activated/deactivated by using it as a context
+    processor, i.e. using `with OptInGlobal():`"""
+    ABSTRACT = True
+    def  __enter__(self) -> None:
+        self.activate()
+
+    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
+        self.deactivate()
+
+
 class ClearRequestGlobals:
     """Middleware that clears RequestGlobal variables from thread local storage."""
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]):

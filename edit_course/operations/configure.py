@@ -12,6 +12,7 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from course.models import CourseInstance, CourseModule, LearningObjectCategory
+from exercise.cache.invalidate_util import CachedContents
 from exercise.models import (
     LearningObject,
     CourseChapter,
@@ -588,7 +589,7 @@ def configure(instance: CourseInstance, new_config: dict) -> Tuple[bool, List[st
     config = cparts.config
 
     # wrap everything in a transaction to make sure invalid configuration isn't saved
-    with transaction.atomic():
+    with transaction.atomic(), CachedContents():
         # Configure course instance attributes.
         if "start" in config:
             dt = parse_date(config["start"], errors)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, InitVar
 from datetime import datetime
-from typing import Any, ClassVar, Dict, Generic, Iterable, List, Literal, Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, Generator, Generic, Iterable, List, Literal, Optional, Type, TypeVar, Union
 
 from django.db.models import Prefetch
 from django.db.models.signals import post_delete, post_save
@@ -10,7 +10,13 @@ from django.utils import timezone
 from course.models import CourseInstance, CourseInstanceProto, CourseModule, CourseModuleProto
 from lib.cache.cached import CacheBase, DBData, ProxyManager
 from threshold.models import CourseModuleRequirement
-from .invalidate_util import category_learning_objects, learning_object_ancestors, module_learning_objects
+from .invalidate_util import (
+    category_learning_objects,
+    exercise_entry_ancestors,
+    learning_object_ancestors,
+    learning_object_modules,
+    module_learning_objects,
+)
 from ..models import BaseExercise, LearningObject, LearningObjectCategory, LearningObjectProto
 
 
@@ -53,7 +59,7 @@ class ExerciseEntryBase(LearningObjectProto, CacheBase, EqById, Generic[ModuleEn
     NUM_PARAMS: ClassVar[int] = 1
     INVALIDATORS = [
         (LearningObject, [post_delete, post_save], learning_object_ancestors),
-        (LearningObjectCategory, [post_delete, post_save], category_learning_objects(learning_object_ancestors)),
+        (LearningObjectCategory, [post_delete, post_save], category_learning_objects(exercise_entry_ancestors)),
         (CourseModule, [post_delete, post_save], module_learning_objects),
     ]
     type: ClassVar[Literal['exercise']] = 'exercise'
@@ -105,6 +111,11 @@ class ExerciseEntryBase(LearningObjectProto, CacheBase, EqById, Generic[ModuleEn
         if self.parent is not None:
             children.append(self.parent)
         return children
+
+    def get_descendants(self) -> Generator[ExerciseEntry, None, None]:
+        for child in self.children:
+            yield child
+            yield from child.get_descendants()
 
     def _generate_data(
             self,
@@ -169,8 +180,8 @@ class ModuleEntryBase(CourseModuleProto, CacheBase, EqById, Generic[ExerciseEntr
     NUM_PARAMS: ClassVar[int] = 1
     INVALIDATORS = [
         (CourseModule, [post_delete, post_save], ("id",)),
-        (LearningObject, [post_delete, post_save], ("course_module_id",)),
-        (LearningObjectCategory, [post_delete, post_save], category_learning_objects(lambda lobj: [lobj.course_module_id])),
+        (LearningObject, [post_delete, post_save], learning_object_modules),
+        (LearningObjectCategory, [post_delete, post_save], category_learning_objects(lambda entry: [entry.module.id])),
     ]
     type: ClassVar[Literal['module']] = 'module'
     id: int
@@ -210,6 +221,11 @@ class ModuleEntryBase(CourseModuleProto, CacheBase, EqById, Generic[ExerciseEntr
 
     def get_child_proxies(self) -> Iterable[CacheBase]:
         return self.children
+
+    def get_descendants(self) -> Generator[ExerciseEntry, None, None]:
+        for child in self.children:
+            yield child
+            yield from child.get_descendants()
 
     def _generate_data(
             self,
@@ -296,7 +312,7 @@ class CachedDataBase(CourseInstanceProto, CacheBase, Generic[ModuleEntry, Exerci
         (CourseInstance, [post_delete, post_save], ("id",)),
         (CourseModule, [post_delete, post_save], ("course_instance_id",)),
         (LearningObject, [post_delete, post_save], (["course_module", "course_instance_id"],)),
-        (LearningObjectCategory, [post_delete, post_save], category_learning_objects(lambda lobj: [lobj.course_module.course_instance_id])),
+        (LearningObjectCategory, [post_delete, post_save], ("course_instance_id",)),
     ]
     instance_id: InitVar[int]
     url: str
