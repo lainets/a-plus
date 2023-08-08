@@ -987,7 +987,11 @@ def configure_from_url(instance: CourseInstance, url: str) -> Tuple[bool, List[s
     if not config.pop('success', True):
         errors.insert(0, _("COURSE_CONFIG_ERROR_SERVICE_FAILED_TO_EXPORT"))
         return False, errors
-
+    import logging
+    logger = logging.getLogger()
+    from time import perf_counter as timer
+    start = timer()
     status, configure_errors = configure(instance, config)
+    logger.info(f"configure {timer()-start}")
 
     return status, errors + configure_errors

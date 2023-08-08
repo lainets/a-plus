@@ -34,6 +34,11 @@ from .transact import CacheTransactionManager
 
 
 logger = logging.getLogger('aplus.cached2')
+logger2 = logging.getLogger()
+
+from time import perf_counter
+
+timer = perf_counter
 
 
 ModelT = TypeVar("ModelT", bound=Model)
@@ -553,6 +558,7 @@ class CacheBase(metaclass=CacheMeta):
             prefetch_children: bool = False,
             prefetched_data: Optional[DBData] = None,
             ) -> T:
+        start2 = timer()
         precreated = ProxyManager()
         obj = precreated.get_or_create_proxy(cls, *params, modifiers=modifiers)
         precreated.resolve([obj], prefetched_data=prefetched_data)
@@ -563,6 +569,7 @@ class CacheBase(metaclass=CacheMeta):
 
         precreated.save()
 
+        logger2.info(f"{cls.__name__}.get {timer() - start2}")
         return obj
 
     def _build(
