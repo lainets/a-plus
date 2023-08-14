@@ -125,7 +125,7 @@ class CacheTransactionManager(RequestGlobal):
         if not conn.in_atomic_block:
             return []
 
-        savepoint_ids = [id(conn.atomic_blocks[0])]
+        savepoint_ids = [id(self)]
         savepoint_ids.extend(sid for sid in conn.savepoint_ids if sid is not None)
         return savepoint_ids
 
